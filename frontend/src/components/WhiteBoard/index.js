@@ -15,7 +15,7 @@
  */
 
 import React from 'react';
-import { v4 as uuidv4 } from 'uuid';
+import {v4 as uuidv4} from 'uuid';
 
 import './style.css'
 import ChatSocket from "../../ChatSocket";
@@ -53,12 +53,15 @@ export default class WhiteBoard extends React.Component {
         }
     }
 
-    sendCanvasUpdate = () => {
+    sendCanvasUpdate = (prevX, prevY, currX, currY, erase, eraseBoard=false) => {
         new Promise(() => {
-            const canvas = this.canvasRef.current;
-            let pngUrl = canvas.toDataURL();
             let updateMessage = {
-                url: pngUrl,
+                prevX: prevX,
+                prevY: prevY,
+                currX: currX,
+                currY: currY,
+                erase: erase,
+                eraseBoard: eraseBoard,
                 senderId: this.senderId
             };
             this.state.chatSocket.sendMessage(updateMessage);
@@ -69,28 +72,26 @@ export default class WhiteBoard extends React.Component {
     clearCanvas = () => {
         if (!this.canvasContext) return;
         this.canvasContext.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
-        this.sendCanvasUpdate();
     }
 
     updateReceived = (message) => {
-        let m_canvas = document.createElement('canvas');
-        m_canvas.width = this.canvasWidth;
-        m_canvas.height = this.canvasHeight;
-        let m_context = m_canvas.getContext('2d');
 
         let messageBody = JSON.parse(message.body);
         if (messageBody.senderId === this.senderId) {
             return;
         }
 
-        if (!this.canvasContext) return;
-        let img = new Image();
-        img.onload = () => {
-            m_context.drawImage(img, 0, 0);
-            this.canvasContext.clearRect(0,0, this.canvasWidth, this.canvasHeight);
-            this.canvasContext.drawImage(m_canvas, 0, 0);
+        if (messageBody.eraseBoard) {
+            this.clearCanvas();
+            return;
         }
-        img.src = messageBody.url.replace(/"/g,"");
+
+        this.draw(
+            messageBody.prevX,
+            messageBody.prevY,
+            messageBody.currX,
+            messageBody.currY,
+            messageBody.erase);
     }
 
     onMouseUp = () => {
@@ -118,8 +119,8 @@ export default class WhiteBoard extends React.Component {
                 });
             }
             this.setState(newState);
-            this.draw(newState.prevX, newState.prevY, newState.currX, newState.currY);
-            this.sendCanvasUpdate();
+            this.draw(newState.prevX, newState.prevY, newState.currX, newState.currY, this.state.doErase);
+            this.sendCanvasUpdate(newState.prevX, newState.prevY, newState.currX, newState.currY, this.state.doErase);
         }
     }
 
@@ -142,7 +143,7 @@ export default class WhiteBoard extends React.Component {
         };
     }
 
-    draw = (prevX, prevY, currX, currY) => {
+    draw = (prevX, prevY, currX, currY, erase) => {
         let ctx = this.canvasContext;
         if (!ctx) {
             return;
@@ -150,7 +151,7 @@ export default class WhiteBoard extends React.Component {
         ctx.beginPath();
         ctx.moveTo(prevX, prevY);
         ctx.lineTo(currX, currY);
-        if (this.state.doErase) {
+        if (erase) {
             ctx.globalCompositeOperation="destination-out";
             ctx.arc(currX,currY,40,0,Math.PI*2,false);
             ctx.fill();
@@ -175,24 +176,29 @@ export default class WhiteBoard extends React.Component {
         });
     }
 
+    onClearRectEvent = () => {
+        this.clearCanvas();
+        this.sendCanvasUpdate(0,0,0,0,false, true);
+    }
+
     render() {
         let chatSocket = this.state.chatSocket;
         return (
             <div className="whiteboard-container">
                 <h1 className="title">WhiteBoard {this.state.sessionId}</h1>
                 <div className={chatSocket ? "canvas-container" : "display-none"}>
-                    <h3 className="clear-rect-button" onClick={() => this.clearCanvas()}>Reset whiteboard</h3>
+                    <h3 className="clear-rect-button" onClick={this.onClearRectEvent}>Reset whiteboard</h3>
                     <div onClick={this.toggleErasing} className="eraser-checkbox">
                         <input readOnly={true} className="eraser-input" type="checkbox"
                                checked={this.state.doErase}/>
                         <h3>Eraser</h3>
                     </div>
                     <canvas className="canvas"
-                        ref={this.canvasRef}
-                        onMouseMove={this.onMouseMove}
-                        onMouseDown={this.onMouseDown}
-                        onMouseUp={this.onMouseUp}
-                        onMouseOut={this.onMouseOut}/>
+                            ref={this.canvasRef}
+                            onMouseMove={this.onMouseMove}
+                            onMouseDown={this.onMouseDown}
+                            onMouseUp={this.onMouseUp}
+                            onMouseOut={this.onMouseOut}/>
                 </div>
                 <div className={chatSocket ? "display-none" : undefined}>
                     <br /><br /><br /><br /><br /><br /><br /><br />
